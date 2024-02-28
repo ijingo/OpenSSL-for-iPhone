@@ -28,7 +28,8 @@ set -u
 DEFAULTVERSION="1.1.1w"
 
 # Default (=full) set of targets to build
-DEFAULTTARGETS="ios-sim-cross-x86_64 ios-sim-cross-arm64 ios-cross-arm64 mac-catalyst-x86_64 mac-catalyst-arm64 tvos-sim-cross-x86_64 tvos-sim-cross-arm64 tvos-cross-arm64 watchos-sim-cross-x86_64 watchos-sim-cross-arm64 watchos-cross-armv7k watchos-cross-arm64_32"
+DEFAULTTARGETS="xros-cross-arm64 xrsimulator-cross-arm64"
+# DEFAULTTARGETS="ios-sim-cross-x86_64 ios-sim-cross-arm64 ios-cross-arm64 mac-catalyst-x86_64 mac-catalyst-arm64 tvos-sim-cross-x86_64 tvos-sim-cross-arm64 tvos-cross-arm64 watchos-sim-cross-x86_64 watchos-sim-cross-arm64 watchos-cross-armv7k watchos-cross-arm64_32"
 
 # Excluded targets:
 #   ios-sim-cross-i386  Legacy
@@ -41,6 +42,7 @@ IOS_MIN_SDK_VERSION="15.0"
 TVOS_MIN_SDK_VERSION="15.0"
 WATCHOS_MIN_SDK_VERSION="8.5"
 MACOSX_MIN_SDK_VERSION="12.3"
+XROS_MIN_SDK_VERSION="1.0"
 
 # Init optional env variables (use available variable or default to empty string)
 CURL_OPTIONS="${CURL_OPTIONS:-}"
@@ -195,6 +197,14 @@ finish_build_loop()
     LIBSSL_WATCHOSSIM+=("${TARGETDIR}/lib/libssl.a")
     LIBCRYPTO_WATCHOSSIM+=("${TARGETDIR}/lib/libcrypto.a")
     OPENSSLCONF_SUFFIX="watchos_sim_${ARCH}"
+  elif [[ "${PLATFORM}" == XROS ]]; then
+    LIBSSL_XROS+=("${TARGETDIR}/lib/libssl.a")
+    LIBCRYPTO_XROS+=("${TARGETDIR}/lib/libcrypto.a")
+    OPENSSLCONF_SUFFIX="visionos_${ARCH}"
+  elif [[ "${PLATFORM}" == XRSimulator ]]; then
+    LIBSSL_XROSSIM+=("${TARGETDIR}/lib/libssl.a")
+    LIBCRYPTO_XROSSIM+=("${TARGETDIR}/lib/libcrypto.a")
+    OPENSSLCONF_SUFFIX="visionos_sim_${ARCH}"
   else # Catalyst
     LIBSSL_CATALYST+=("${TARGETDIR}/lib/libssl.a")
     LIBCRYPTO_CATALYST+=("${TARGETDIR}/lib/libcrypto.a")
@@ -227,6 +237,7 @@ TARGETS=""
 TVOS_SDKVERSION=""
 VERSION=""
 WATCHOS_SDKVERSION=""
+XROS_SDKVERSION=""
 
 # Process command line arguments
 for i in "$@"
@@ -262,6 +273,14 @@ case $i in
     ;;
   --ios-min-sdk=*)
     IOS_MIN_SDK_VERSION="${i#*=}"
+    shift
+    ;;
+  --xros-sdk=*)
+    XROS_SDKVERSION="${i#*=}"
+    shift
+    ;;
+  --xros-min-sdk=*)
+    XROS_MIN_SDK_VERSION="${i#*=}"
     shift
     ;;
   --macosx-sdk=*)
@@ -373,6 +392,9 @@ fi
 if [ ! -n "${WATCHOS_SDKVERSION}" ]; then
   WATCHOS_SDKVERSION=$(xcrun -sdk watchos --show-sdk-version)
 fi
+if [ ! -n "${XROS_SDKVERSION}" ]; then
+  XROS_SDKVERSION=$(xcrun -sdk xros --show-sdk-version)
+fi
 
 # Determine number of cores for (parallel) build
 BUILD_THREADS=1
@@ -422,6 +444,8 @@ echo "  tvOS SDK: ${TVOS_SDKVERSION}"
 echo "  tvOS min SDK: ${TVOS_MIN_SDK_VERSION}"
 echo "  watchOS SDK: ${WATCHOS_SDKVERSION}"
 echo "  watchOS min SDK: ${WATCHOS_MIN_SDK_VERSION}"
+echo "  xrOS SDK: ${XROS_SDKVERSION}"
+echo "  xrOS min SDK: ${XROS_MIN_SDK_VERSION}"
 echo "  MacOSX SDK: ${MACOSX_SDKVERSION}"
 echo "  MacOSX min SDK: ${MACOSX_MIN_SDK_VERSION}"
 
@@ -509,6 +533,10 @@ LIBSSL_TVOS=()
 LIBSSL_TVOSSIM=()
 LIBCRYPTO_TVOS=()
 LIBCRYPTO_TVOSSIM=()
+LIBSSL_XROS=()
+LIBSSL_XROSSIM=()
+LIBCRYPTO_XROS=()
+LIBCRYPTO_XROSSIM=()
 LIBSSL_WATCHOS=()
 LIBSSL_WATCHOSSIM=()
 LIBCRYPTO_WATCHOS=()
@@ -571,6 +599,24 @@ if [ ${#LIBSSL_WATCHOSSIM[@]} -gt 0 ]; then
   echo "\n=====>watchOS Simulator SSL and Crypto lib files:"
   echo "${CURRENTPATH}/lib/libssl-watchOS-Sim.a"
   echo "${CURRENTPATH}/lib/libcrypto-watchOS-Sim.a"
+fi
+
+# Build xrOS/Simulator library if selected for build
+if [ ${#LIBSSL_XROS[@]} -gt 0 ]; then
+  echo "Build library for visionOS..."
+  lipo -create ${LIBSSL_XROS[@]} -output "${CURRENTPATH}/lib/libssl-visionOS.a"
+  lipo -create ${LIBCRYPTO_XROS[@]} -output "${CURRENTPATH}/lib/libcrypto-visionOS.a"
+  echo "\n=====>visionOS SSL and Crypto lib files:"
+  echo "${CURRENTPATH}/lib/libssl-visionOS.a"
+  echo "${CURRENTPATH}/lib/libcrypto-visionOS.a"
+fi
+if [ ${#LIBSSL_XROSSIM[@]} -gt 0 ]; then
+  echo "Build library for visionOS Simulator..."
+  lipo -create ${LIBSSL_XROSSIM[@]} -output "${CURRENTPATH}/lib/libssl-visionOS-Sim.a"
+  lipo -create ${LIBCRYPTO_XROSSIM[@]} -output "${CURRENTPATH}/lib/libcrypto-visionOS-Sim.a"
+  echo "\n=====>visionOS Simulator SSL and Crypto lib files:"
+  echo "${CURRENTPATH}/lib/libssl-visionOS-Sim.a"
+  echo "${CURRENTPATH}/lib/libcrypto-visionOS-Sim.a"
 fi
 
 # Build Catalyst library if selected for build
@@ -651,6 +697,12 @@ if [ ${#OPENSSLCONF_ALL[@]} -gt 1 ]; then
       ;;
       *_watchos_arm64_32.h)
         DEFINE_CONDITION="TARGET_OS_WATCH && TARGET_CPU_ARM64"
+      ;;
+      *_visionos_arm64.h)
+        DEFINE_CONDITION="TARGET_OS_VISION && TARGET_CPU_ARM64"
+      ;;
+      *_visionos_sim_arm64.h)
+        DEFINE_CONDITION="TARGET_OS_VISION && TARGET_OS_SIMULATOR && TARGET_CPU_ARM64"
       ;;
       *)
         # Don't run into unexpected cases by setting the default condition to false
